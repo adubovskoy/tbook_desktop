@@ -30,6 +30,9 @@
     "shortDescription": "Language-learning ebook reader",
     "longDescription": "Read books in their original language; tap any word for the full sentence translation with the matching words highlighted, plus IPA pronunciation. Reads the offline .tbook format.",
     "resources": ["resources/*"],
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

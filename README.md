@@ -29,7 +29,7 @@ handled by the WebView (CSS multi-column) instead of Android's `ChapterPaginator
 
 ## Prerequisites
 
-- **Rust** (stable) and **Node.js 18+**.
+- **Rust** (stable) and **Node.js 20+** (CI builds on Node 24).
 - **Linux**: a WebKitGTK 4.1 dev stack. On Arch: `webkit2gtk-4.1 base-devel`
   (Debian/Ubuntu: `libwebkit2gtk-4.1-dev build-essential libssl-dev libayatana-appindicator3-dev`).
 - **Windows**: WebView2 runtime (preinstalled on Windows 10/11). **macOS**: Xcode CLT.
@@ -67,9 +67,22 @@ To cut a release:
 3. Wait for the four matrix jobs, then review and **publish the draft release**.
 
 The workflow can also be started manually from the Actions tab (workflow_dispatch);
-it then creates the `v<version>` tag/draft itself. macOS bundles are unsigned —
-users open them via right-click → Open (or `xattr -d com.apple.quarantine`); add
-Apple signing/notarization secrets to the workflow later if needed.
+it then creates the `v<version>` tag/draft itself.
+
+**macOS Gatekeeper**: bundles are ad-hoc signed (`signingIdentity: "-"` in
+`tauri.conf.json`) but not notarized, so a downloaded app shows *"TReader is
+damaged"* — and since macOS Sequoia right-click → Open no longer bypasses this.
+Users must clear the quarantine flag once:
+
+```bash
+xattr -d com.apple.quarantine /Applications/TReader.app
+```
+
+The proper fix is Apple Developer signing + notarization: add the
+`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+`APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` secrets as `env` on the
+tauri-action step (and drop the ad-hoc `signingIdentity`); tauri-action then
+signs and notarizes automatically.
 
 ## Layout
 

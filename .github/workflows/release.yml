@@ -52,7 +52,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
@@ -86,9 +86,12 @@ jobs:
             | Linux (Fedora & co.) | `.rpm` |
             | Linux (portable) | `.AppImage` |
 
-            > macOS builds are not code-signed: on first launch use
-            > right-click → Open, or clear the quarantine flag with
-            > `xattr -d com.apple.quarantine /Applications/TReader.app`.
+            > macOS builds are ad-hoc signed but **not notarized**, so Gatekeeper
+            > reports the downloaded app as "damaged" ("повреждено"). After
+            > copying TReader.app to Applications, clear the quarantine flag:
+            > `xattr -d com.apple.quarantine /Applications/TReader.app`
+            > (right-click → Open does NOT work for un-notarized apps since
+            > macOS Sequoia).
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
