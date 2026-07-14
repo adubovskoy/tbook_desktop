@@ -1,6 +1,6 @@
 {
   "name": "treader-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TReader — desktop language-learning ebook reader",
   "type": "module",
   "scripts": {
