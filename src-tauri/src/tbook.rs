@@ -127,4 +127,15 @@ mod tests {
             .expect("paragraphs array");
         assert!(!paras.is_empty(), "chapter should have paragraphs");
     }
+
+    #[test]
+    fn image_mime_sniffed_from_bytes() {
+        let manifest = manifest_of(&sample()).expect("manifest");
+        let cover = manifest.cover.expect("sample has a cover");
+        let url = image_data_url(&sample(), &cover).expect("cover data url");
+        assert!(
+            url.starts_with("data:image/jpeg;base64,"),
+            "MIME comes from magic bytes, not the entry extension"
+        );
+    }
 }

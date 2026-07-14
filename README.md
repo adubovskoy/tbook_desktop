@@ -48,6 +48,29 @@ npm run tauri build -- --bundles deb   # just the .deb
 Bundled assets (`en_ipa.tsv`, `sample.tbook`) live in `src-tauri/resources/` and are copied
 from `../android/app/src/main/assets/`.
 
+## Release builds (CI)
+
+`.github/workflows/release.yml` builds installers for all three OSes and attaches
+them to a **draft** GitHub release:
+
+- **Windows**: `.msi` (WiX) + `-setup.exe` (NSIS)
+- **macOS**: `.dmg` for Apple Silicon (`aarch64`) and Intel (`x64`)
+- **Linux**: `.deb`, `.rpm`, `.AppImage` (built on Ubuntu 22.04 for wide glibc compat)
+
+To cut a release:
+
+1. Bump `version` in `src-tauri/tauri.conf.json` (and `package.json` to keep them in sync).
+2. Tag and push — the tag **must** match the app version:
+   ```bash
+   git tag v0.1.0 && git push origin v0.1.0
+   ```
+3. Wait for the four matrix jobs, then review and **publish the draft release**.
+
+The workflow can also be started manually from the Actions tab (workflow_dispatch);
+it then creates the `v<version>` tag/draft itself. macOS bundles are unsigned —
+users open them via right-click → Open (or `xattr -d com.apple.quarantine`); add
+Apple signing/notarization secrets to the workflow later if needed.
+
 ## Layout
 
 ```

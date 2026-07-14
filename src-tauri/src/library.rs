@@ -93,21 +93,13 @@ pub fn delete_book(books_dir: &Path, id: &str) -> Result<(), String> {
 }
 
 /// Cover image as a `data:` URL for an `<img>` src, or `None` if the book has
-/// no cover.
+/// no cover. The MIME type is sniffed from the bytes — the cover's entry name
+/// is nominal (spec §3.3), so the extension is never trusted.
 pub fn cover_data_url(books_dir: &Path, id: &str) -> Result<Option<String>, String> {
-    use base64::Engine;
     let path = file_for_id(books_dir, id);
     let manifest = tbook::manifest_of(&path)?;
-    let cover = match manifest.cover {
-        Some(c) if !c.is_empty() => c,
-        _ => return Ok(None),
-    };
-    let bytes = tbook::read_entry(&path, &cover)?;
-    let mime = if cover.to_lowercase().ends_with(".png") {
-        "image/png"
-    } else {
-        "image/jpeg"
-    };
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    Ok(Some(format!("data:{mime};base64,{b64}")))
+    match manifest.cover {
+        Some(c) if !c.is_empty() => tbook::image_data_url(&path, &c).map(Some),
+        _ => Ok(None),
+    }
 }
