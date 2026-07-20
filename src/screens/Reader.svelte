@@ -84,7 +84,18 @@
   onMount(() => {
     void loadBook();
     window.addEventListener("keydown", onKeydown);
-    return () => window.removeEventListener("keydown", onKeydown);
+    // Expose the live position so a flush on app close saves the exact spot,
+    // bypassing the debounce. Returns null while loading to avoid clobbering
+    // the saved position with a mid-transition value.
+    const provide = () =>
+      loading
+        ? null
+        : { bookId, chapterIndex, paragraphIndex: currentTopParagraph(), fraction: progressFraction };
+    app.registerPositionProvider(provide);
+    return () => {
+      window.removeEventListener("keydown", onKeydown);
+      app.clearPositionProvider(provide);
+    };
   });
 
   async function loadBook() {

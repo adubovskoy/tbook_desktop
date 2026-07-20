@@ -33,6 +33,8 @@ class AppState {
   ready = $state(false);
 
   #store: Store | null = null;
+  /** Reader-supplied getter for the live position, so `flush()` can grab it on close. */
+  #positionProvider: (() => (ReadingPosition & { bookId: string }) | null) | null = null;
 
   async init(): Promise<void> {
     this.#store = await load("settings.json", { autoSave: true, defaults: {} });
@@ -123,6 +125,26 @@ class AppState {
     await s.delete(`pos_chapter_${id}`);
     await s.delete(`pos_para_${id}`);
     await s.delete(`pos_frac_${id}`);
+  }
+
+  /** The reader registers a getter so `flush()` can read the live position on close. */
+  registerPositionProvider(fn: () => (ReadingPosition & { bookId: string }) | null): void {
+    this.#positionProvider = fn;
+  }
+
+  clearPositionProvider(fn: () => (ReadingPosition & { bookId: string }) | null): void {
+    if (this.#positionProvider === fn) this.#positionProvider = null;
+  }
+
+  /**
+   * Persist the latest reading position and force the store to disk. Called on
+   * app close, where the debounced in-session saves may not have flushed yet.
+   */
+  async flush(): Promise<void> {
+    if (!this.#store) return;
+    const pos = this.#positionProvider?.();
+    if (pos) await this.savePosition(pos.bookId, pos);
+    await this.#store.save();
   }
 }
 
