@@ -92,12 +92,15 @@ scripts/patch-appimage.sh some.AppImage           # strip + repack in place
 ```
 
 **macOS Gatekeeper**: bundles are ad-hoc signed (`signingIdentity: "-"` in
-`tauri.conf.json`) but not notarized, so a downloaded app shows *"TReader is
-damaged"* — and since macOS Sequoia right-click → Open no longer bypasses this.
-Users must clear the quarantine flag once:
+`tauri.conf.json`) but not notarized. The signature itself is valid, there is just
+no notarization ticket, so the first launch of a downloaded build is blocked with
+*"Apple could not verify «TReader» is free of malware…"* (older systems report
+*"TReader is damaged"* instead). Since macOS Sequoia right-click → Open no longer
+bypasses this. Users must either click **Open Anyway** in System Settings →
+Privacy & Security after the blocked launch, or clear the quarantine flag once:
 
 ```bash
-xattr -d com.apple.quarantine /Applications/TReader.app
+xattr -dr com.apple.quarantine /Applications/TReader.app
 ```
 
 The proper fix is Apple Developer signing + notarization: add the
