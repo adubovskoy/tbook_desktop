@@ -109,3 +109,19 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      # linuxdeploy bundles this runner's libwayland into the AppImage, but
+      # libEGL/libGL come from the host (they must match its driver) — and the
+      # host's Mesa then refuses to initialise against the older bundled
+      # libwayland-client: WebKit aborts with "Could not create default EGL
+      # display: EGL_BAD_PARAMETER" and the window stays white. Strip those
+      # libraries out and replace the asset tauri-action just uploaded.
+      - name: Fix AppImage (strip bundled libwayland)
+        if: matrix.platform == 'ubuntu-22.04'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./scripts/patch-appimage.sh
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          gh release upload "v$VERSION" \
+            src-tauri/target/release/bundle/appimage/*.AppImage --clobber

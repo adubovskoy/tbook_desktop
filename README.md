@@ -45,6 +45,12 @@ npm run tauri build    # release bundle(s) → src-tauri/target/release/bundle/
 npm run tauri build -- --bundles deb   # just the .deb
 ```
 
+Building the **AppImage** locally on a rolling distro (Arch & co.) needs
+`NO_STRIP=1 npm run tauri build -- --bundles appimage`: linuxdeploy ships an old
+`strip` that chokes on `.relr.dyn` sections in current system libraries. Then run
+`scripts/patch-appimage.sh` on the result (see below) — the raw AppImage starts
+with a white window.
+
 Bundled assets (`en_ipa.tsv`, `sample.tbook`) live in `src-tauri/resources/` and are copied
 from `../android/app/src/main/assets/`.
 
@@ -68,6 +74,22 @@ To cut a release:
 
 The workflow can also be started manually from the Actions tab (workflow_dispatch);
 it then creates the `v<version>` tag/draft itself.
+
+**AppImage white window**: linuxdeploy bundles the build machine's
+`libwayland-client/-cursor/-egl/-server`, while `libEGL`/`libGL`/`libdrm` are
+deliberately taken from the host (they have to match its driver). The host's Mesa
+then refuses to initialise against the older bundled libwayland, WebKit aborts
+with `Could not create default EGL display: EGL_BAD_PARAMETER` and the window
+stays white — on any current Wayland desktop, and no
+`WEBKIT_DISABLE_DMABUF_RENDERER`/`WEBKIT_DISABLE_COMPOSITING_MODE` helps. The
+release workflow therefore runs `scripts/patch-appimage.sh` after the build: it
+strips those libraries (GTK then links the host's, which by construction matches
+the host's Mesa), repacks the AppImage and re-uploads it. Useful standalone too:
+
+```bash
+scripts/patch-appimage.sh --check some.AppImage   # is libwayland bundled?
+scripts/patch-appimage.sh some.AppImage           # strip + repack in place
+```
 
 **macOS Gatekeeper**: bundles are ad-hoc signed (`signingIdentity: "-"` in
 `tauri.conf.json`) but not notarized, so a downloaded app shows *"TReader is
