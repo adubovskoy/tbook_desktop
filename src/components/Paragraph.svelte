@@ -6,6 +6,8 @@
     render,
     index,
     highlightRanges = [],
+    selectedRanges = [],
+    gloss = null,
     figure = undefined,
     imageUrl = undefined,
     table = undefined,
@@ -14,6 +16,10 @@
     render: ParagraphRender;
     index: number;
     highlightRanges?: Array<[number, number]>;
+    /** The clicked word plus its aligned counterparts (bilingual mode). */
+    selectedRanges?: Array<[number, number]>;
+    /** Gloss language interleaved into table cells, or null for source only. */
+    gloss?: string | null;
     /** Figure anchored to this paragraph (role "figure"); sentences are its caption. */
     figure?: Figure;
     /** The figure image as a data: URL, once loaded. */
@@ -23,7 +29,7 @@
     onImageLoad?: () => void;
   } = $props();
 
-  const html = $derived(paragraphHTML(render, highlightRanges));
+  const html = $derived(paragraphHTML(render, highlightRanges, selectedRanges));
 
   // Table cells are mini-paragraphs of ordinary tappable sentences; data-r/data-c
   // on the cell let the click handler resolve the sentence back to the table.
@@ -32,7 +38,7 @@
       ? table.rows.map((row) =>
           row.map((cell) => ({
             header: cell.header === true,
-            html: paragraphHTML(buildParagraphRender(cell.sentences ?? [])),
+            html: paragraphHTML(buildParagraphRender(cell.sentences ?? [], "body", null, gloss)),
           })),
         )
       : null,

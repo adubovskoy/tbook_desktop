@@ -2,6 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { BookSummary, Chapter, Note, OpenedBook } from "./types";
+import type { Accent } from "./settings";
 
 export const listBooks = () => invoke<BookSummary[]>("list_books");
 export const openBook = (id: string) => invoke<OpenedBook>("open_book", { id });
@@ -15,4 +16,6 @@ export const bookImage = (id: string, entry: string) =>
 export const coverDataUrl = (id: string) => invoke<string | null>("cover_data_url", { id });
 export const importBook = (path: string) => invoke<BookSummary>("import_book", { path });
 export const deleteBook = (id: string) => invoke<void>("delete_book", { id });
-export const ipaFor = (word: string) => invoke<string | null>("ipa_for", { word });
+/** English IPA for a word, transcribed in the reader's chosen accent. */
+export const ipaFor = (word: string, accent: Accent) =>
+  invoke<string | null>("ipa_for", { word, accent });

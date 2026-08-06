@@ -1,12 +1,12 @@
+mod dict;
 mod ipa;
 mod library;
 mod models;
 mod search;
 mod tbook;
+mod tts;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 use tauri::path::BaseDirectory;
 use tauri::Manager;
@@ -16,14 +16,14 @@ use models::{BookSummary, OpenedBook};
 /// Process-wide services resolved once at startup.
 pub struct AppState {
     books_dir: PathBuf,
-    ipa_path: PathBuf,
-    ipa: OnceLock<HashMap<String, String>>,
-}
-
-impl AppState {
-    fn ipa_map(&self) -> &HashMap<String, String> {
-        self.ipa.get_or_init(|| ipa::load(&self.ipa_path))
-    }
+    /// Where the bundled dictionaries and fonts live.
+    resource_dir: PathBuf,
+    /// English → IPA, one accent resident at a time.
+    ipa: ipa::Pronunciations,
+    /// Read-aloud for WebViews without the Web Speech API (see `tts`).
+    tts: tts::NativeTts,
+    /// Installed offline dictionaries, their catalog and their downloads.
+    dictionaries: dict::Dictionaries,
 }
 
 #[tauri::command]
@@ -85,9 +85,83 @@ fn delete_book(state: tauri::State<AppState>, id: String) -> Result<(), String> 
     library::delete_book(&state.books_dir, &id)
 }
 
+/// English IPA for a word, in the accent the reader picked. Async so the first
+/// call — which loads ~180k entries off disk — doesn't block the UI thread.
 #[tauri::command]
-fn ipa_for(state: tauri::State<AppState>, word: String) -> Option<String> {
-    ipa::lookup(state.ipa_map(), &word)
+async fn ipa_for(
+    state: tauri::State<'_, AppState>,
+    word: String,
+    accent: ipa::Accent,
+) -> Result<Option<String>, String> {
+    Ok(state.ipa.lookup(&state.resource_dir, accent, &word))
+}
+
+/// Whether the system speech CLI can read `lang` aloud. Only consulted when the
+/// WebView has no Web Speech API of its own.
+#[tauri::command]
+fn tts_can_speak(state: tauri::State<AppState>, lang: String) -> bool {
+    state.tts.can_speak(&lang)
+}
+
+#[tauri::command]
+fn tts_speak(state: tauri::State<AppState>, text: String, lang: String) -> Result<(), String> {
+    state.tts.speak(&text, &lang)
+}
+
+#[tauri::command]
+fn tts_stop(state: tauri::State<AppState>) {
+    state.tts.stop();
+}
+
+/// The downloadable-dictionary catalog, from the network or the offline cache.
+#[tauri::command]
+async fn dict_manifest(
+    state: tauri::State<'_, AppState>,
+) -> Result<dict::manifest::ManifestResult, String> {
+    // On the async runtime, not the main thread: this one talks to the network.
+    Ok(state.dictionaries.manifest())
+}
+
+#[tauri::command]
+fn dict_installed(state: tauri::State<AppState>) -> Vec<dict::models::InstalledDict> {
+    state.dictionaries.installed()
+}
+
+#[tauri::command]
+fn dict_installed_for(
+    state: tauri::State<AppState>,
+    source: String,
+    target: String,
+) -> Option<dict::models::InstalledDict> {
+    state.dictionaries.installed_for(&source, &target)
+}
+
+/// Start a download; progress arrives as `dict-progress` events.
+#[tauri::command]
+fn dict_download(app: tauri::AppHandle, state: tauri::State<AppState>, id: String) -> Result<(), String> {
+    state.dictionaries.start_download(&app, &id)
+}
+
+#[tauri::command]
+fn dict_cancel(state: tauri::State<AppState>, id: String) {
+    state.dictionaries.cancel_download(&id);
+}
+
+#[tauri::command]
+fn dict_delete(state: tauri::State<AppState>, id: String) -> Result<(), String> {
+    state.dictionaries.delete(&id)
+}
+
+/// Article(s) for a tapped word. `None` means no dictionary is installed for the
+/// pair; an empty list means one is, but the word isn't in it.
+#[tauri::command]
+async fn dict_lookup(
+    state: tauri::State<'_, AppState>,
+    source: String,
+    target: String,
+    word: String,
+) -> Result<Option<Vec<dict::models::DictEntry>>, String> {
+    Ok(state.dictionaries.lookup(&source, &target, &word))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -101,9 +175,7 @@ pub fn run() {
             let books_dir = data_dir.join("books");
             std::fs::create_dir_all(&books_dir).ok();
 
-            let ipa_path = app
-                .path()
-                .resolve("resources/en_ipa.tsv", BaseDirectory::Resource)?;
+            let resource_dir = app.path().resolve("resources", BaseDirectory::Resource)?;
 
             // First-run: copy the bundled sample into the library. A marker file
             // means deleting the sample later doesn't bring it back.
@@ -123,8 +195,10 @@ pub fn run() {
 
             app.manage(AppState {
                 books_dir,
-                ipa_path,
-                ipa: OnceLock::new(),
+                resource_dir,
+                ipa: ipa::Pronunciations::default(),
+                tts: tts::NativeTts::default(),
+                dictionaries: dict::Dictionaries::new(&data_dir),
             });
             Ok(())
         })
@@ -139,6 +213,16 @@ pub fn run() {
             import_book,
             delete_book,
             ipa_for,
+            tts_can_speak,
+            tts_speak,
+            tts_stop,
+            dict_manifest,
+            dict_installed,
+            dict_installed_for,
+            dict_download,
+            dict_cancel,
+            dict_delete,
+            dict_lookup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

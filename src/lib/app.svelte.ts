@@ -12,10 +12,15 @@ import {
   KEY,
   PAD_MAX,
   PAD_MIN,
+  POPUP_FONT_MAX,
+  POPUP_FONT_MIN,
   clamp,
 } from "./settings";
 
-export type View = "library" | "reader" | "settings";
+export type View = "library" | "reader" | "settings" | "dictionaries" | "help";
+
+/** Key prefix the book id is appended to for the library's ordering. */
+const LAST_OPENED_PREFIX = "last_opened_";
 
 export interface ReadingPosition {
   chapterIndex: number;
@@ -57,8 +62,16 @@ class AppState {
       font: await g(KEY.font, DEFAULTS.font),
       fontSizeSp: await g(KEY.fontSizeSp, DEFAULTS.fontSizeSp),
       theme: await g(KEY.theme, DEFAULTS.theme),
+      accent: await g(KEY.accent, DEFAULTS.accent),
       glossLang: (await s.get<string>(KEY.glossLang)) ?? DEFAULTS.glossLang,
+      bilingual: await g(KEY.bilingual, DEFAULTS.bilingual),
+      hideLangPicker: await g(KEY.hideLangPicker, DEFAULTS.hideLangPicker),
       readMode: await g(KEY.readMode, DEFAULTS.readMode),
+      tapMode: await g(KEY.tapMode, DEFAULTS.tapMode),
+      textAlign: await g(KEY.textAlign, DEFAULTS.textAlign),
+      popupWordSizeSp: await g(KEY.popupWordSizeSp, DEFAULTS.popupWordSizeSp),
+      popupIpaSizeSp: await g(KEY.popupIpaSizeSp, DEFAULTS.popupIpaSizeSp),
+      popupSentenceSizeSp: await g(KEY.popupSentenceSizeSp, DEFAULTS.popupSentenceSizeSp),
       padLeft: await g(KEY.padLeft, DEFAULTS.padLeft),
       padRight: await g(KEY.padRight, DEFAULTS.padRight),
       padTop: await g(KEY.padTop, DEFAULTS.padTop),
@@ -75,18 +88,49 @@ class AppState {
     for (const k of ["padLeft", "padRight", "padTop", "padBottom"] as const) {
       if (patch[k] !== undefined) next[k] = clamp(patch[k]!, PAD_MIN, PAD_MAX);
     }
+    for (const k of ["popupWordSizeSp", "popupIpaSizeSp", "popupSentenceSizeSp"] as const) {
+      if (patch[k] !== undefined) next[k] = clamp(patch[k]!, POPUP_FONT_MIN, POPUP_FONT_MAX);
+    }
     this.settings = next;
     for (const k of Object.keys(patch) as (keyof AppSettings)[]) {
       await this.store.set(KEY[k], next[k]);
     }
   }
 
-  async setGloss(lang: string): Promise<void> {
+  async setGloss(lang: string | null): Promise<void> {
     await this.update({ glossLang: lang });
   }
 
+  /**
+   * Reload the library, most recently opened first (books never opened keep the
+   * backend's title order, after the ones that were).
+   */
   async refreshBooks(): Promise<void> {
-    this.books = await api.listBooks();
+    const books = await api.listBooks();
+    const opened = await this.#lastOpenedAll();
+    this.books = books.sort((a, b) => {
+      const diff = (opened[b.id] ?? 0) - (opened[a.id] ?? 0);
+      return diff !== 0 ? diff : a.title.localeCompare(b.title);
+    });
+  }
+
+  /** Stamp a book as just opened — this is what orders the library. */
+  async markOpened(id: string): Promise<void> {
+    await this.store.set(`${LAST_OPENED_PREFIX}${id}`, Date.now());
+  }
+
+  /**
+   * Last-opened timestamps by book id. One read of the whole store — cheaper
+   * than a lookup per book, and books never opened are simply absent.
+   */
+  async #lastOpenedAll(): Promise<Record<string, number>> {
+    const out: Record<string, number> = {};
+    for (const [key, value] of await this.store.entries<number>()) {
+      if (key.startsWith(LAST_OPENED_PREFIX) && typeof value === "number") {
+        out[key.slice(LAST_OPENED_PREFIX.length)] = value;
+      }
+    }
+    return out;
   }
 
   openReader(id: string): void {
@@ -102,6 +146,14 @@ class AppState {
 
   goSettings(): void {
     this.view = "settings";
+  }
+
+  goDictionaries(): void {
+    this.view = "dictionaries";
+  }
+
+  goHelp(): void {
+    this.view = "help";
   }
 
   async getPosition(id: string): Promise<ReadingPosition> {
@@ -120,11 +172,13 @@ class AppState {
     await s.set(`pos_frac_${id}`, pos.fraction);
   }
 
+  /** Forget everything remembered about a book (called when it is deleted). */
   async clearPosition(id: string): Promise<void> {
     const s = this.store;
     await s.delete(`pos_chapter_${id}`);
     await s.delete(`pos_para_${id}`);
     await s.delete(`pos_frac_${id}`);
+    await s.delete(`${LAST_OPENED_PREFIX}${id}`);
   }
 
   /** The reader registers a getter so `flush()` can read the live position on close. */

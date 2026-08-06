@@ -5,6 +5,8 @@
   import Library from "./screens/Library.svelte";
   import Reader from "./screens/Reader.svelte";
   import Settings from "./screens/Settings.svelte";
+  import Dictionaries from "./screens/Dictionaries.svelte";
+  import Help from "./screens/Help.svelte";
 
   onMount(() => {
     void app.init();
@@ -41,6 +43,10 @@
   {/key}
 {:else if app.view === "settings"}
   <Settings />
+{:else if app.view === "dictionaries"}
+  <Dictionaries />
+{:else if app.view === "help"}
+  <Help />
 {:else}
   <Library />
 {/if}

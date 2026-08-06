@@ -8,12 +8,22 @@ import type { ParagraphRole, Sentence } from "./types";
 
 export const SCENE_BREAK_TEXT = "* * *";
 
-/** A tappable source word within a paragraph's flattened text. */
+/**
+ * A tappable run within a paragraph's flattened text.
+ *
+ * Ordinarily a source word, `wordIndex` indexing the sentence's `words`. With a
+ * bilingual gloss interleaved (see `buildParagraphRender`) a run may instead be
+ * an aligned chunk of the translated text: `gloss` is then true, `wordIndex`
+ * indexes the translation's `align`, and `alignedWords` holds the source word
+ * indices that chunk translates — the pair a click lights up.
+ */
 export interface WordSpan {
   start: number;
   end: number;
   sentenceIndex: number;
   wordIndex: number;
+  gloss?: boolean;
+  alignedWords?: number[];
 }
 
 /** An inline emphasis run in paragraph-flattened coordinates. */
@@ -39,6 +49,8 @@ export interface ParagraphRender {
   emphasis: EmphasisRun[];
   /** Footnote markers in paragraph-flattened coordinates. */
   notes: NoteMarker[];
+  /** [start,end) stretches of interleaved translation (bilingual mode), drawn paler. */
+  glossRuns: Array<[number, number]>;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -55,19 +67,27 @@ function clamp(v: number, lo: number, hi: number): number {
  * later word/emphasis offset right by the label length. Only markers whose id
  * resolves in `knownNotes` (the notes.json keys) render; unknown ids are
  * ignored and leave clean prose.
+ *
+ * With `gloss` set (bilingual mode) each sentence is followed by its
+ * translation into that language, in the same text flow — recorded in
+ * `glossRuns` so it can be drawn paler — and every aligned chunk of that
+ * translation becomes a tappable span of its own. Sentences without a
+ * translation in `gloss` (.tbook §5.3.1) simply get none.
  */
 export function buildParagraphRender(
   sentences: Sentence[],
   role: ParagraphRole = "body",
   knownNotes?: Set<string> | null,
+  gloss?: string | null,
 ): ParagraphRender {
   if (role === "sceneBreak") {
-    return { text: SCENE_BREAK_TEXT, spans: [], role, emphasis: [], notes: [] };
+    return { text: SCENE_BREAK_TEXT, spans: [], role, emphasis: [], notes: [], glossRuns: [] };
   }
   let text = "";
   const spans: WordSpan[] = [];
   const emphasis: EmphasisRun[] = [];
   const notes: NoteMarker[] = [];
+  const glossRuns: Array<[number, number]> = [];
   sentences.forEach((s, si) => {
     if (text.length > 0) text += " ";
     const base = text.length;
@@ -125,8 +145,77 @@ export function buildParagraphRender(
       const b = clamp(base + shift(sp.e, true), a, end);
       if (b > a) emphasis.push({ start: a, end: b, bold: sp.k === "b" });
     }
+
+    // Bilingual mode: the sentence's translation right behind it. Its align
+    // chunks become gloss spans, sorted by offset and skipping any that overlaps
+    // one already taken — `align` is ordered by nothing in particular (§5.4)
+    // while `wordAt` binary-searches a sorted, disjoint span list. Chunks
+    // aligned to no source word are left untappable.
+    //
+    // A translation that came out identical to its source is dropped: numerals
+    // and names translate to themselves, and a chapter heading numbered "I."
+    // would otherwise read "I. I.".
+    const tr = gloss ? s.tr?.[gloss] : undefined;
+    if (tr && tr.text.trim().length > 0 && tr.text.trim() !== s.src.trim()) {
+      text += " ";
+      const glossBase = text.length;
+      text += tr.text;
+      glossRuns.push([glossBase, text.length]);
+      let taken = glossBase;
+      const chunks: WordSpan[] = [];
+      (tr.align ?? []).forEach((c, ci) => {
+        const words = c.w ?? [];
+        if (words.length === 0 || !c.t || c.t.length < 2) return;
+        const a = clamp(c.t[0], 0, tr.text.length);
+        const b = clamp(c.t[1], a, tr.text.length);
+        if (b <= a) return;
+        chunks.push({
+          start: glossBase + a,
+          end: glossBase + b,
+          sentenceIndex: si,
+          wordIndex: ci,
+          gloss: true,
+          alignedWords: words,
+        });
+      });
+      chunks.sort((x, y) => x.start - y.start);
+      for (const span of chunks) {
+        if (span.start < taken) continue;
+        spans.push(span);
+        taken = span.end;
+      }
+    }
   });
-  return { text, spans, role, emphasis, notes };
+  return { text, spans, role, emphasis, notes, glossRuns };
+}
+
+/**
+ * Every range to highlight for a click on the run addressed by `sentenceIndex` /
+ * `wordIndex` / `gloss`: the run itself, plus its counterpart across the language
+ * boundary — for a source word the aligned chunks of the sentence's interleaved
+ * translation, for a translation chunk the source words it translates. Without an
+ * interleaved gloss a word has no counterpart, so this is then just the clicked
+ * word. Empty when the run isn't in this paragraph.
+ */
+export function pairRanges(
+  render: ParagraphRender,
+  sentenceIndex: number,
+  wordIndex: number,
+  gloss = false,
+): Array<[number, number]> {
+  const tapped = render.spans.find(
+    (s) => (s.gloss ?? false) === gloss && s.sentenceIndex === sentenceIndex && s.wordIndex === wordIndex,
+  );
+  if (!tapped) return [];
+  const pairs = render.spans.filter(
+    (s) =>
+      (s.gloss ?? false) !== gloss &&
+      s.sentenceIndex === sentenceIndex &&
+      (gloss
+        ? (tapped.alignedWords ?? []).includes(s.wordIndex)
+        : (s.alignedWords ?? []).includes(wordIndex)),
+  );
+  return [tapped, ...pairs].map((s) => [s.start, s.end] as [number, number]);
 }
 
 /** Word whose [start,end) strictly contains `offset`, or null. Binary search. */
@@ -149,16 +238,22 @@ interface Segment {
   bold: boolean;
   italic: boolean;
   highlight: boolean;
+  gloss: boolean;
+  selected: boolean;
 }
 
 /**
  * Build the paragraph as an HTML string: tappable words and emphasis runs become
  * `<span>`s carrying data attributes / classes; plain gaps stay as text nodes
- * (keeps the element count down). Highlight ranges (search) tint their range.
+ * (keeps the element count down). Highlight ranges (search) tint their range;
+ * `selectedRanges` (the clicked word and, in bilingual mode, the words it aligns
+ * with) get the popup's own highlight colors, so a clicked word reads the same on
+ * the page as it does in the sheet.
  */
 export function paragraphHTML(
   render: ParagraphRender,
   highlightRanges: Array<[number, number]> = [],
+  selectedRanges: Array<[number, number]> = [],
 ): string {
   const text = render.text;
   const n = text.length;
@@ -177,7 +272,7 @@ export function paragraphHTML(
     bounds.add(clamp(m.start, 0, n));
     bounds.add(clamp(m.end, 0, n));
   }
-  for (const [a, b] of highlightRanges) {
+  for (const [a, b] of [...highlightRanges, ...selectedRanges, ...render.glossRuns]) {
     bounds.add(clamp(a, 0, n));
     bounds.add(clamp(b, 0, n));
   }
@@ -200,6 +295,8 @@ export function paragraphHTML(
       bold: false,
       italic: false,
       highlight: false,
+      gloss: render.glossRuns.some(([a, b]) => a <= p && b >= q),
+      selected: false,
     };
     for (const e of render.emphasis) {
       if (e.start <= p && e.end >= q) {
@@ -210,17 +307,28 @@ export function paragraphHTML(
     for (const [a, b] of highlightRanges) {
       if (a <= p && b >= q) seg.highlight = true;
     }
+    for (const [a, b] of selectedRanges) {
+      if (a <= p && b >= q) seg.selected = true;
+    }
 
     const classes: string[] = [];
     if (seg.word) classes.push("w");
     if (seg.bold) classes.push("b");
     if (seg.italic) classes.push("i");
+    if (seg.gloss) classes.push("g");
+    // `sel` last so it wins over a search match and over the gloss tint.
     if (seg.highlight) classes.push("hl");
+    if (seg.selected) classes.push("sel");
     if (classes.length === 0) {
       html += escapeHtml(seg.text);
       continue;
     }
-    const attrs = seg.word ? ` data-s="${seg.word.sentenceIndex}" data-w="${seg.word.wordIndex}"` : "";
+    // data-g marks a gloss chunk: its data-w indexes the translation's align
+    // chunks, not the sentence's words.
+    const attrs = seg.word
+      ? ` data-s="${seg.word.sentenceIndex}" data-w="${seg.word.wordIndex}"` +
+        (seg.word.gloss ? ' data-g="1"' : "")
+      : "";
     html += `<span class="${classes.join(" ")}"${attrs}>${escapeHtml(seg.text)}</span>`;
   }
   return html;

@@ -1,3 +1,13 @@
+/* Font for IPA transcriptions: a subset of Charis Regular 7.000 (SIL Global,
+   OFL 1.1) covering the IPA blocks, renamed per the OFL Reserved Font Name
+   rules. System sans fonts lack several IPA glyphs and misplace the combining
+   diacritics; Charis is designed for linguistic text. */
+@font-face {
+  font-family: "TReader IPA";
+  src: url("./assets/ipa.ttf") format("truetype");
+  font-display: swap;
+}
+
 /* ---- Palette & theming ---------------------------------------------------- */
 :root {
   --bg: #fbfbfd;
@@ -11,6 +21,7 @@
   --primary-container: #dfe1ff;
   --on-primary-container: #131a43;
   --highlight: #ffec99; /* search match background */
+  --gloss: #75757d; /* interleaved translation (bilingual mode) */
   --shadow: rgba(0, 0, 0, 0.18);
 }
 
@@ -33,6 +44,7 @@
     --primary-container: #353e72;
     --on-primary-container: #dfe1ff;
     --highlight: #6b5d1f;
+    --gloss: #90909b;
     --shadow: rgba(0, 0, 0, 0.5);
   }
 }
@@ -48,6 +60,7 @@
   --primary-container: #353e72;
   --on-primary-container: #dfe1ff;
   --highlight: #6b5d1f;
+  --gloss: #90909b;
   --shadow: rgba(0, 0, 0, 0.5);
 }
 
@@ -131,6 +144,21 @@ button {
   opacity: 0.4;
   cursor: default;
 }
+/* Bilingual toggle: a text glyph, so being on is shown by a filled disc rather
+   than a tint (which reads as "hovered" on a bar of icons). */
+.icon-btn.bilingual {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 16px;
+}
+.icon-btn.bilingual.active {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
 .link {
   background: none;
   border: none;
@@ -140,6 +168,11 @@ button {
 }
 
 /* ---- Library -------------------------------------------------------------- */
+/* A .tbook hovering over the window. */
+.screen.drop-target {
+  outline: 2px dashed var(--primary);
+  outline-offset: -6px;
+}
 .library-grid {
   flex: 1;
   overflow-y: auto;
@@ -279,6 +312,128 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.setting-hint {
+  display: block;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 3px;
+}
+
+/* ---- Help ----------------------------------------------------------------- */
+.help-title {
+  margin: 22px 0 6px;
+  font-size: 16px;
+}
+.help-para {
+  margin: 0 0 10px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* ---- Dictionaries --------------------------------------------------------- */
+.dict-intro,
+.dict-note {
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.dict-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.dict-error {
+  color: #d9534f;
+  font-size: 13px;
+  padding-bottom: 8px;
+}
+.dict-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0 4px;
+  border-top: 1px solid var(--border);
+}
+.dict-main {
+  flex: 1;
+  min-width: 0;
+}
+.dict-pair {
+  font-size: 15px;
+}
+.dict-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.dict-action {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.dict-installed {
+  color: var(--primary);
+  font-size: 14px;
+}
+.dict-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+}
+
+/* ---- Dictionary article (inside the word popup) --------------------------- */
+.article {
+  margin-top: 14px;
+}
+.article-sep {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+.article-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.article-lemma {
+  font-size: var(--popup-sentence, 16px);
+  font-weight: 700;
+}
+.article-grammar {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.article-ipa {
+  font-size: var(--popup-ipa, 16px);
+  font-family: "TReader IPA", serif;
+  color: var(--text-dim);
+}
+.article-senses {
+  margin: 6px 0 0;
+  padding-left: 22px;
+  font-size: var(--popup-sentence, 16px);
+  line-height: 1.45;
+}
+.article-senses li {
+  margin-bottom: 6px;
+}
+.sense-lead {
+  font-weight: 700;
+}
+.sense-gloss {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+.article-attribution {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 /* ---- Reader --------------------------------------------------------------- */
 .reader {
   position: relative;
@@ -313,6 +468,9 @@ button {
 .para {
   margin: 0 0 1em;
   hyphens: auto;
+}
+.para.body {
+  text-align: var(--reader-align, left);
 }
 .para.heading {
   font-size: 1.3em;
@@ -349,6 +507,21 @@ button {
   background: var(--highlight);
   border-radius: 2px;
 }
+/* Bilingual mode: the interleaved translation, a step paler than the source
+   sentence it follows. Color only — nothing that changes glyph widths, so
+   highlighting a pair never reflows the paragraph around it. */
+.reader-content .g,
+.sheet-note-body .g {
+  color: var(--gloss);
+}
+/* The clicked word and the words it aligns with, in the translation sheet's own
+   highlight colors so a word reads the same on the page as in the popup. */
+.reader-content .sel,
+.sheet-note-body .sel {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  border-radius: 3px;
+}
 
 /* Footnote markers (tappable superscript labels). */
 .reader-content sup.note {
@@ -372,6 +545,20 @@ button {
   max-width: 100%;
   max-height: 60vh;
   border-radius: 6px;
+}
+/* The cover claims a whole page rather than a fraction of one. */
+.para.figure.full-page {
+  height: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  break-after: column;
+}
+.para.figure.full-page img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
 }
 .para.figure figcaption {
   margin-top: 0.5em;
@@ -449,6 +636,36 @@ button {
 .reader-bottom {
   bottom: 0;
   border-top: 1px solid var(--border);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 14px 8px;
+}
+.reader-status {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reader-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.page-slider {
+  flex: 1;
+  accent-color: var(--primary);
+}
+/* Search-match stepper in the top bar. */
+.match-nav {
+  display: inline-flex;
+  align-items: center;
+}
+.match-count {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
 }
 .reader-titles {
   flex: 1;
@@ -523,18 +740,35 @@ button {
   font-weight: 700;
   margin-bottom: 8px;
 }
+/* Word header: the word itself, with read-aloud across from it. */
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .sheet-word {
-  font-size: 26px;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--popup-word, 24px);
   font-weight: 600;
+}
+.icon-btn.speak {
+  flex: none;
+  font-size: 20px;
+  line-height: 1;
+  border-radius: 20px;
+  padding: 7px 9px;
+  user-select: none;
 }
 .sheet-ipa {
   margin-top: 4px;
-  font-size: 18px;
+  font-size: var(--popup-ipa, 16px);
+  font-family: "TReader IPA", serif;
   color: var(--text-dim);
 }
 .sheet-translation {
   margin-top: 16px;
-  font-size: 18px;
+  font-size: var(--popup-sentence, 16px);
   line-height: 1.6;
 }
 .sheet-translation mark {

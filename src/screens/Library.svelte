@@ -1,10 +1,48 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { confirm, open } from "@tauri-apps/plugin-dialog";
+  import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { coverDataUrl, deleteBook, importBook } from "../lib/api";
   import { app } from "../lib/app.svelte";
 
   let covers = $state<Record<string, string | null>>({});
   let error = $state<string | null>(null);
+  /** A .tbook is being dragged over the window. */
+  let dragging = $state(false);
+
+  // Dropping a .tbook on the window imports it — the desktop counterpart of
+  // Android's "share or open a .tbook from any app".
+  onMount(() => {
+    const unlisten = getCurrentWebview().onDragDropEvent(async (event) => {
+      if (event.payload.type === "over") {
+        dragging = true;
+      } else if (event.payload.type === "drop") {
+        dragging = false;
+        await importPaths(event.payload.paths);
+      } else {
+        dragging = false;
+      }
+    });
+    return () => void unlisten.then((off) => off());
+  });
+
+  /** Import every .tbook among `paths`, reporting the first failure. */
+  async function importPaths(paths: string[]) {
+    const books = paths.filter((p) => p.toLowerCase().endsWith(".tbook"));
+    if (books.length === 0) {
+      if (paths.length > 0) error = "Only .tbook files can be imported.";
+      return;
+    }
+    error = null;
+    for (const path of books) {
+      try {
+        await importBook(path);
+      } catch (e) {
+        error = String(e);
+      }
+    }
+    await app.refreshBooks();
+  }
 
   // Lazily load cover thumbnails for books that have one.
   $effect(() => {
@@ -22,14 +60,12 @@
   async function onImport() {
     error = null;
     try {
-      const path = await open({
-        multiple: false,
+      const picked = await open({
+        multiple: true,
         filters: [{ name: "TBook", extensions: ["tbook"] }],
       });
-      if (typeof path === "string") {
-        await importBook(path);
-        await app.refreshBooks();
-      }
+      if (Array.isArray(picked)) await importPaths(picked);
+      else if (typeof picked === "string") await importPaths([picked]);
     } catch (e) {
       error = String(e);
     }
@@ -47,7 +83,7 @@
   }
 </script>
 
-<div class="screen">
+<div class="screen" class:drop-target={dragging}>
   <header class="appbar">
     <h1 class="appbar-title">Library</h1>
     <div class="appbar-actions">
@@ -61,7 +97,9 @@
   {/if}
 
   {#if app.books.length === 0}
-    <div class="empty">No books yet. Use <strong>Import…</strong> to add a .tbook file.</div>
+    <div class="empty">
+      No books yet. Use <strong>Import…</strong> — or drop a .tbook file on the window.
+    </div>
   {:else}
     <div class="library-grid">
       {#each app.books as b (b.id)}
