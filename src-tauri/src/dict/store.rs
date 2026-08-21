@@ -12,14 +12,16 @@ use rusqlite::{Connection, OpenFlags};
 
 use super::models::{parse_senses, DictEntry};
 
-/// Mirrors dictc's validation query (tdict §6): direct lemma hit unioned with
-/// the inflected-form table, capped to keep the article sheet sane.
+/// Mirrors dictc's validation query (tdict §6): direct lemma hits ranked
+/// before inflected-form hits, so a form-table entry can neither outrank the
+/// word's own article nor evict it via the cap.
 const QUERY: &str = "\
-SELECT id, lemma, pos, gender, ipa, senses_json FROM entry WHERE lemma = ?1
-UNION
-SELECT e.id, e.lemma, e.pos, e.gender, e.ipa, e.senses_json
-  FROM form f JOIN entry e ON e.id = f.entry_id WHERE f.form = ?1
-ORDER BY id LIMIT 8";
+SELECT id, lemma, pos, gender, ipa, senses_json FROM (
+  SELECT id, lemma, pos, gender, ipa, senses_json, 0 AS via_form FROM entry WHERE lemma = ?1
+  UNION
+  SELECT e.id, e.lemma, e.pos, e.gender, e.ipa, e.senses_json, 1
+    FROM form f JOIN entry e ON e.id = f.entry_id WHERE f.form = ?1 AND e.lemma <> ?1
+) ORDER BY via_form, id LIMIT 8";
 
 pub struct Store {
     path: PathBuf,
@@ -52,9 +54,12 @@ impl Store {
     }
 
     /// Entries matching `word` exactly, either as a lemma or via the form table
-    /// (pre-lowercased inflected forms). Homonyms come back in entry-id order
-    /// (Wiktionary's editorial noun/verb/… ordering). Empty when the word isn't
-    /// in the dictionary; `Err` when the file can't be read.
+    /// (pre-lowercased inflected forms). Entries whose lemma is the word itself
+    /// come first — "mere" is also an obsolete spelling of "mayor", and the
+    /// mayor article must not shadow the adjective's own — then form-table
+    /// hits; entry-id order (Wiktionary's editorial noun/verb/… ordering)
+    /// within each group. Empty when the word isn't in the dictionary; `Err`
+    /// when the file can't be read.
     pub fn lookup(&self, word: &str) -> Result<Vec<DictEntry>, String> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare_cached(QUERY)?;
@@ -144,6 +149,22 @@ mod tests {
         .unwrap();
         conn.execute("INSERT INTO form VALUES ('taught', 1)", []).unwrap();
         conn.execute("INSERT INTO form VALUES ('teach', 1)", []).unwrap();
+        // "mere" is both its own adjective and (Wiktionary says) an obsolete
+        // spelling of "mayor" — the mayor entry gets the lower id on purpose.
+        conn.execute(
+            "INSERT INTO entry VALUES (2, 'mayor', 'noun', NULL, NULL,
+             '[{\"gloss\":\"leader of a city\"}]')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO entry VALUES (3, 'mere', 'adj', NULL, NULL,
+             '[{\"gloss\":\"just, only\"}]')",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO form VALUES ('mere', 2)", []).unwrap();
+        conn.execute("INSERT INTO form VALUES ('mere', 3)", []).unwrap();
     }
 
     fn temp_path(name: &str) -> PathBuf {
@@ -172,6 +193,21 @@ mod tests {
         assert!(store.lookup("absent").unwrap().is_empty());
         assert_eq!(store.format_version(), 1);
         assert_eq!(store.pair(), "en-ru");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn a_lemma_outranks_form_table_hits() {
+        let path = temp_path("ranking");
+        write_tdict(&path, "en-ru", "1");
+        let store = Store::new(&path);
+
+        // The word's own article comes first despite mayor's lower entry id,
+        // and the lemma+form rows for "mere" itself yield no duplicate.
+        let hits = store.lookup("mere").unwrap();
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].lemma, "mere");
+        assert_eq!(hits[1].lemma, "mayor");
         std::fs::remove_file(&path).ok();
     }
 
