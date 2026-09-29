@@ -45,6 +45,60 @@ fn read_chapter(
     tbook::read_chapter_value(&library::file_for_id(&state.books_dir, &id), &file)
 }
 
+/// A version-2 chapter skeleton as raw JSON (v2 spec §4): the language-free
+/// text the WebView tokenizes and renders.
+#[tauri::command]
+fn read_skeleton(
+    state: tauri::State<AppState>,
+    id: String,
+    chapter: usize,
+) -> Result<serde_json::Value, String> {
+    tbook::read_skeleton_value(&library::file_for_id(&state.books_dir, &id), chapter)
+}
+
+/// One version-2 overlay as raw JSON (v2 spec §6), already bound to its
+/// skeleton (§6.1). `None` means the chapter has no overlay in that language;
+/// an error means one exists but does not bind, and the chapter is then shown
+/// without a translation.
+#[tauri::command]
+fn read_overlay(
+    state: tauri::State<AppState>,
+    id: String,
+    chapter: usize,
+    lang: String,
+) -> Result<Option<serde_json::Value>, String> {
+    tbook::read_overlay_value(&library::file_for_id(&state.books_dir, &id), chapter, &lang)
+}
+
+/// Resolve a saved reading position of a version-2 book (v2 spec §3.5.2).
+#[tauri::command]
+fn resolve_locator(
+    state: tauri::State<AppState>,
+    id: String,
+    locator: String,
+) -> Result<models::Locator, String> {
+    tbook::resolve_locator(&library::file_for_id(&state.books_dir, &id), &locator)
+}
+
+/// A version-2 book's footnote bodies (v2 spec §4.12), or `None` without any.
+#[tauri::command]
+fn read_notes_v2(
+    state: tauri::State<AppState>,
+    id: String,
+) -> Result<Option<serde_json::Value>, String> {
+    tbook::read_notes_v2_value(&library::file_for_id(&state.books_dir, &id))
+}
+
+/// A version-2 footnote overlay (v2 spec §6.12), already bound to the bodies.
+#[tauri::command]
+fn read_notes_overlay(
+    state: tauri::State<AppState>,
+    id: String,
+    lang: String,
+) -> Result<Option<serde_json::Value>, String> {
+    tbook::read_notes_overlay_value(&library::file_for_id(&state.books_dir, &id), &lang)
+}
+
 #[tauri::command]
 fn book_texts(state: tauri::State<AppState>, id: String) -> Result<Vec<Vec<String>>, String> {
     search::book_texts(&library::file_for_id(&state.books_dir, &id))
@@ -206,6 +260,11 @@ pub fn run() {
             list_books,
             open_book,
             read_chapter,
+            read_skeleton,
+            read_overlay,
+            resolve_locator,
+            read_notes_v2,
+            read_notes_overlay,
             book_texts,
             book_notes,
             book_image,

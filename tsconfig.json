@@ -9,6 +9,10 @@
     "checkJs": true,
     "isolatedModules": true,
     "moduleResolution": "bundler",
+    // The `.test.ts` files import with an explicit extension so Node can run
+    // them straight (`npm test`); nothing here is ever emitted by tsc.
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "strict": true,
     "skipLibCheck": true
   },

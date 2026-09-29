@@ -3,6 +3,7 @@
 
 import { load, type Store } from "@tauri-apps/plugin-store";
 import * as api from "./api";
+import { legacyLocator } from "./locatorV2";
 import type { BookSummary } from "./types";
 import {
   type AppSettings,
@@ -28,6 +29,13 @@ export interface ReadingPosition {
   paragraphIndex: number;
   /** Within-chapter progress fraction [0,1], for the progress bar. */
   fraction: number;
+  /**
+   * Version 2 books also store the position as a locator,
+   * `chapterId/paragraphId/sentence/word` (.tbook v2 §3.5.2): content-derived
+   * ids, so it survives a re-conversion that renumbers chapters or paragraphs.
+   * It wins over the indices on restore.
+   */
+  locator?: string;
 }
 
 class AppState {
@@ -162,6 +170,13 @@ class AppState {
       chapterIndex: (await s.get<number>(`pos_chapter_${id}`)) ?? 0,
       paragraphIndex: (await s.get<number>(`pos_para_${id}`)) ?? 0,
       fraction: (await s.get<number>(`pos_frac_${id}`)) ?? 0,
+      locator:
+        (await s.get<string>(`pos_locator_${id}`)) ??
+        // Saved by an earlier build as two ids: still a (paragraph) locator.
+        legacyLocator(
+          (await s.get<string>(`pos_chapter_id_${id}`)) ?? undefined,
+          (await s.get<string>(`pos_para_id_${id}`)) ?? undefined,
+        ),
     };
   }
 
@@ -170,6 +185,11 @@ class AppState {
     await s.set(`pos_chapter_${id}`, pos.chapterIndex);
     await s.set(`pos_para_${id}`, pos.paragraphIndex);
     await s.set(`pos_frac_${id}`, pos.fraction);
+    if (pos.locator) {
+      await s.set(`pos_locator_${id}`, pos.locator);
+      await s.delete(`pos_chapter_id_${id}`);
+      await s.delete(`pos_para_id_${id}`);
+    }
   }
 
   /** Forget everything remembered about a book (called when it is deleted). */
@@ -178,6 +198,9 @@ class AppState {
     await s.delete(`pos_chapter_${id}`);
     await s.delete(`pos_para_${id}`);
     await s.delete(`pos_frac_${id}`);
+    await s.delete(`pos_chapter_id_${id}`);
+    await s.delete(`pos_para_id_${id}`);
+    await s.delete(`pos_locator_${id}`);
     await s.delete(`${LAST_OPENED_PREFIX}${id}`);
   }
 

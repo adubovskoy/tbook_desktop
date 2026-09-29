@@ -69,7 +69,10 @@ fn sanitize_id(s: &str) -> String {
 
 /// Validate and copy an external `.tbook` into the library, returning its row.
 pub fn import_book(books_dir: &Path, src: &Path) -> Result<BookSummary, String> {
-    let manifest = tbook::manifest_of(src)?; // validates it's a real .tbook
+    // Validates it's a real .tbook; a version-2 book is also digest-checked
+    // entry by entry (v2 spec §9.1).
+    let manifest = tbook::manifest_of(src)?;
+    tbook::verify_book(src)?;
     let stem = src.file_stem().and_then(|s| s.to_str()).unwrap_or("book");
     let base_id = sanitize_id(stem);
     let mut id = base_id.clone();

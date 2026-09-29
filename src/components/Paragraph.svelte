@@ -11,6 +11,7 @@
     figure = undefined,
     imageUrl = undefined,
     table = undefined,
+    cells = undefined,
     onImageLoad = undefined,
   }: {
     render: ParagraphRender;
@@ -26,6 +27,11 @@
     imageUrl?: string | null;
     /** Table anchored to this (empty) paragraph (role "table"). */
     table?: Table;
+    /**
+     * Version 2: the table's cells, already rendered — a v2 cell is a block of
+     * its own and its gloss comes from the overlay, so the Reader builds them.
+     */
+    cells?: Array<Array<{ header: boolean; html: string }>>;
     onImageLoad?: () => void;
   } = $props();
 
@@ -34,7 +40,9 @@
   // Table cells are mini-paragraphs of ordinary tappable sentences; data-r/data-c
   // on the cell let the click handler resolve the sentence back to the table.
   const tableRows = $derived(
-    table
+    cells
+      ? cells
+      : table
       ? table.rows.map((row) =>
           row.map((cell) => ({
             header: cell.header === true,

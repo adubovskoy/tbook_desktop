@@ -4,7 +4,8 @@
 //! `BookSearch.searchParagraphs`) so the match offsets share one coordinate
 //! system (JS UTF-16) with the renderer's highlight ranges. Here we just read
 //! every chapter and produce each paragraph's *joined* text — sentences joined
-//! by a single space, exactly like `buildParagraphRender`.
+//! by a single space, exactly like `buildParagraphRender`. A version-2 book
+//! stores the paragraph text itself, so there is nothing to join (v2 spec §4.5).
 
 use std::path::Path;
 
@@ -21,6 +22,12 @@ pub fn book_texts(path: &Path) -> Result<Vec<Vec<String>>, String> {
 
 fn read_into(path: &Path, manifest: &Manifest, out: &mut Vec<Vec<String>>) -> Result<(), String> {
     for c in &manifest.chapters {
+        // Version 2 stores the paragraph text itself; version 1 joins the
+        // paragraph's sentences with one space, exactly as the renderer does.
+        if manifest.format_version >= 2 {
+            out.push(tbook::paragraph_texts(path, &c.file)?);
+            continue;
+        }
         let value = tbook::read_chapter_value(path, &c.file)?;
         let chapter: ChapterTexts =
             serde_json::from_value(value).map_err(|e| format!("parse chapter {}: {e}", c.file))?;

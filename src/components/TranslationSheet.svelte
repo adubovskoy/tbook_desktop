@@ -1,16 +1,19 @@
 <script lang="ts">
   import { ipaFor } from "../lib/api";
   import { highlightedHTML, translationHighlightRanges } from "../lib/align";
+  import { gatesText } from "../lib/alignV2";
   import { langName } from "../lib/lang";
   import { app } from "../lib/app.svelte";
   import { baseLang } from "../lib/dict";
   import * as tts from "../lib/tts";
   import type { Sentence } from "../lib/types";
+  import type { TapResult } from "../lib/renderV2";
   import DictionaryArticle from "./DictionaryArticle.svelte";
 
   let {
-    sentence,
-    wordIndex,
+    sentence = undefined,
+    wordIndex = 0,
+    cell = undefined,
     glossLang,
     availableLangs,
     sourceLang,
@@ -19,8 +22,14 @@
     onOpenDictionaries,
     onDismiss,
   }: {
-    sentence: Sentence;
-    wordIndex: number;
+    /** Version 1: the tapped sentence and the word's index within it. */
+    sentence?: Sentence;
+    wordIndex?: number;
+    /**
+     * Version 2: the whole tap already resolved against the overlay — word,
+     * sentence, translation, highlight ranges, label and status (v2 spec §8).
+     */
+    cell?: TapResult;
     glossLang: string;
     availableLangs: string[];
     sourceLang: string;
@@ -45,10 +54,13 @@
   $effect.pre(() => {
     void sentence;
     void wordIndex;
+    void cell;
     showDictionary = glossOnPage;
   });
 
   const word = $derived.by(() => {
+    if (cell) return cell.word;
+    if (!sentence) return "";
     const w = sentence.words?.[wordIndex];
     if (!w || w.length < 2) return "";
     const n = sentence.src.length;
@@ -57,11 +69,30 @@
     return sentence.src.slice(a, b);
   });
 
-  const tr = $derived(glossLang ? sentence.tr?.[glossLang] : undefined);
-  const translationHTML = $derived(
-    tr && tr.text.trim().length > 0
+  const sentenceText = $derived(cell ? cell.sentence : (sentence?.src ?? ""));
+
+  const tr = $derived(!cell && sentence && glossLang ? sentence.tr?.[glossLang] : undefined);
+  const translationHTML = $derived.by(() => {
+    if (cell) {
+      return cell.translation ? highlightedHTML(cell.translation, cell.ranges) : null;
+    }
+    return tr && tr.text.trim().length > 0
       ? highlightedHTML(tr.text, translationHighlightRanges(tr, wordIndex))
-      : null,
+      : null;
+  });
+
+  // §6.7/§8.3: a non-ok status or a failed verdict is shown with the
+  // translation, and a multi-token highlight says whether it is one rendering
+  // (a run) or a split one — a smear and a real split look alike otherwise.
+  const flag = $derived(cell?.flag ?? null);
+  const labelText = $derived(
+    cell?.label === "run"
+      ? "one rendering"
+      : cell?.label === "split"
+        ? "split rendering"
+        : cell?.label
+          ? `${cell.label} rendering`
+          : null,
   );
 
   // English IPA lookup (async, via the Rust dictionary).
@@ -90,7 +121,7 @@
   });
 
   const speakWord = () => void tts.speak(word, sourceLang, app.settings.accent);
-  const speakSentence = () => void tts.speak(sentence.src, sourceLang, app.settings.accent);
+  const speakSentence = () => void tts.speak(sentenceText, sourceLang, app.settings.accent);
 
   // A click reads the word, a hold or right-click the whole sentence — the
   // desktop reading of Android's tap / long-press on the same button.
@@ -184,8 +215,22 @@
     {/if}
 
     {#if !showDictionary && !glossOnPage}
+      {#if flag}
+        <!-- A producer-written status, or a gate's failed verdict: never
+             derived here, and never silently dropped (v2 spec §6.7, §11.3.6). -->
+        <div class="sheet-flag" class:hidden-text={flag.hidden}>
+          <span class="badge">{flag.status}</span>
+          <!-- Which gates ran is what tells "flagged" from "never checked" (§6.8). -->
+          {flag.text} · {gatesText(cell?.gates)}
+        </div>
+      {/if}
       {#if translationHTML !== null}
-        <div class="sheet-translation">{@html translationHTML}</div>
+        <div class="sheet-translation" class:flagged={flag !== null}>{@html translationHTML}</div>
+        {#if labelText}
+          <div class="sheet-label">{labelText}</div>
+        {/if}
+      {:else if flag?.hidden}
+        <div class="sheet-empty">The {langName(glossLang)} text is not shown.</div>
       {:else}
         <div class="sheet-empty">No {langName(glossLang)} translation available.</div>
       {/if}

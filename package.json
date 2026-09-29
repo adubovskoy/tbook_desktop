@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "node src/lib/tokenize.test.ts && node src/lib/alignV2.test.ts && node src/lib/integrityV2.test.ts && node src/lib/locatorV2.test.ts",
     "tauri": "tauri"
   },
   "license": "MIT",

@@ -3,8 +3,8 @@
 // Kotlin String and JS string are both UTF-16, so plain string concatenation
 // and `.length`/`.slice` here reproduce the Android offsets exactly.
 
-import { escapeAttr, escapeHtml } from "./html";
-import type { ParagraphRole, Sentence } from "./types";
+import { escapeAttr, escapeHtml } from "./html.ts";
+import type { ParagraphRole, Sentence } from "./types.ts";
 
 export const SCENE_BREAK_TEXT = "* * *";
 
@@ -51,6 +51,12 @@ export interface ParagraphRender {
   notes: NoteMarker[];
   /** [start,end) stretches of interleaved translation (bilingual mode), drawn paler. */
   glossRuns: Array<[number, number]>;
+  /**
+   * Interleaved translations carrying a non-ok status or a failed verdict,
+   * marked on the page — a version-2 MUST (v2 spec §6.7, §11.3.6). Version 1
+   * records no statuses and leaves this empty.
+   */
+  flaggedRuns?: Array<[number, number]>;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -239,6 +245,7 @@ interface Segment {
   italic: boolean;
   highlight: boolean;
   gloss: boolean;
+  flagged: boolean;
   selected: boolean;
 }
 
@@ -272,7 +279,12 @@ export function paragraphHTML(
     bounds.add(clamp(m.start, 0, n));
     bounds.add(clamp(m.end, 0, n));
   }
-  for (const [a, b] of [...highlightRanges, ...selectedRanges, ...render.glossRuns]) {
+  for (const [a, b] of [
+    ...highlightRanges,
+    ...selectedRanges,
+    ...render.glossRuns,
+    ...(render.flaggedRuns ?? []),
+  ]) {
     bounds.add(clamp(a, 0, n));
     bounds.add(clamp(b, 0, n));
   }
@@ -296,6 +308,7 @@ export function paragraphHTML(
       italic: false,
       highlight: false,
       gloss: render.glossRuns.some(([a, b]) => a <= p && b >= q),
+      flagged: (render.flaggedRuns ?? []).some(([a, b]) => a <= p && b >= q),
       selected: false,
     };
     for (const e of render.emphasis) {
@@ -316,6 +329,8 @@ export function paragraphHTML(
     if (seg.bold) classes.push("b");
     if (seg.italic) classes.push("i");
     if (seg.gloss) classes.push("g");
+    // A flagged translation is never shown as if it were sound (§6.7).
+    if (seg.flagged) classes.push("fl");
     // `sel` last so it wins over a search match and over the gloss tint.
     if (seg.highlight) classes.push("hl");
     if (seg.selected) classes.push("sel");

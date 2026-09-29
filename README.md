@@ -50,6 +50,58 @@ pagination), which keeps the binary tiny (~6 MB; ~4.8 MB `.deb`).
   alignment, click action, default translation language (+ hide the popup's language
   picker), margins, offline dictionaries, "How to use", credits.
 
+## `.tbook` version 2
+
+The reader opens both format versions; `manifest.formatVersion` picks the path and
+anything else is refused by name (`src-tauri/src/tbook.rs`, `parse_manifest`). A
+version-2 book (`../doc/specs/tbook-format-v2.md`) is laid out differently: a chapter is
+a **language-free skeleton** (`text/chN.json` — paragraph text plus sentence ranges) and
+one **overlay per (chapter, language)** (`gloss/chN.<lang>.json` — the translation and
+one link per target token). The Rust core reads the manifest, checks `requires`, resolves
+entries through the spine only, binds each overlay to its skeleton (§6.1 — chapter id,
+paragraph count, paragraph ids, sentence counts; a mismatch rejects the whole overlay and
+the chapter shows without that language) and hands both to the WebView verbatim. The
+WebView owns the text work, as it does for version 1:
+
+- `src/lib/tokenize.ts` — the normative tokenizer **`tbook-w2`** (§5), which regenerates
+  the per-word ranges the format no longer ships, plus the code-point → UTF-16 conversion
+  every offset read from the file goes through (§7).
+- `src/lib/alignV2.ts` — the word rung (§8.2) with `x` escapes, `parts` and `words`
+  overrides; the derived **run / split** labelling (§8.3); and the producer's status and
+  gate verdicts (§6.7/§6.8), which the translation sheet shows as a badge over dimmed
+  text and the page marks on an interleaved gloss. A `wrongLang` or `rejected` text is
+  not shown at all.
+- `src/lib/renderV2.ts` — a skeleton block (plus, in bilingual mode, one language's
+  translations) rendered into the same `ParagraphRender` version 1 produces, so the
+  paragraph component, the HTML builder and hit-testing are shared.
+
+Translations are tokenized lazily, per language, on display or on tap (§5.4); a language
+switch re-reads only the overlay and keeps the skeleton (§8.6). Also implemented:
+
+- **Locators** (§3.5.2, `src/lib/locatorV2.ts`, `tbook.rs` `resolve_locator`): the
+  reading position is stored as `chapterId/paragraphId/sentence/word` — the first word on
+  screen — and resolved by id with the mandatory paragraph-id fallback across chapters;
+  an unknown paragraph degrades to the chapter's start, a locator nothing matches to the
+  book's start, and a word that is not there is dropped rather than moved. Version-1
+  books keep their index-based positions.
+- **Integrity** (§9): the Rust core refuses a book missing a referenced entry, checks
+  every entry it reads against `manifest.digests` (a damaged skeleton refuses its
+  chapter, a damaged overlay is rejected like a mis-bound one) and verifies the whole
+  book on import. `src/lib/integrityV2.ts` recomputes each overlay's `alignDigest`
+  before using it and rejects one whose links no longer reproduce it.
+- **Gates** (§6.8): a flagged cell's badge also says which gates ran over its overlay
+  ("checked by …" / "no quality checks ran"); a clean cell shows nothing.
+- **Footnotes** (§4.12, §6.12): markers are spliced into the paragraph like version 1's,
+  the note opens in `NoteSheetV2.svelte`, and its words tap against the footnote
+  overlay, bound per note id by the Rust side.
+
+Not implemented: the optional unit view of §8.4 (a consumer MAY). Version-1 rendering
+is untouched.
+
+`npm test` runs the format's conformance vectors (tokenizer §5.3 / Annex B.6, expected
+taps of Annex B.2, the `alignDigest` vectors of §9.2 / Annex C, locators and footnote
+markers) straight in Node; `npm run check` type-checks them with the rest.
+
 The `.tbook` format and all reader algorithms are ported from the Android sources
 (`../android/.../data/model/Models.kt`, `ParagraphText.kt`, `BookSearch.kt`,
 `BookProgress.kt`, `PronunciationDictionary.kt`, `EnglishSpelling.kt`,
